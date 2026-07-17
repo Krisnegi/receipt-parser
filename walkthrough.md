@@ -1,6 +1,6 @@
 # Receipt Parser API Walkthrough & Instructions
 
-We have built a clean, beginner-friendly, non-overengineered receipt parsing API service using Express, PostgreSQL, and the modern Google Gen AI SDK. Below are the complete instructions to set up, run, compile, and test the project.
+We have built a clean, beginner-friendly, non-overengineered receipt parsing API service using Express, PostgreSQL, Redis, and the modern Google Gen AI SDK. Below are the complete instructions to set up, run, compile, and test the project.
 
 ---
 
@@ -21,27 +21,23 @@ This installs:
 * `dotenv` (Environment variable management)
 * `morgan` (HTTP request logger)
 * `typescript` & `tsx` (TypeScript compiling and hot-reload runner)
+* `bullmq` (Redis-backed task queue for background parsing)
 
 ---
 
-## 2. Configuring PostgreSQL
+## 2. Configuring PostgreSQL & Redis (Docker)
 
-You can run PostgreSQL either locally or via a **Docker** container.
+We manage database (PostgreSQL) and message queue (Redis) setup using Docker Compose.
 
-### Option A: Run PostgreSQL in Docker (Recommended)
-We have added a `docker-compose.yml` file to the root of the project to manage database setup.
-1. Run the following command in your terminal to start the PostgreSQL container:
+1. Start both containers in the background:
    ```bash
    docker compose up -d
    ```
-2. This maps port `5432` of the container to port `5432` on your host machine, makes it accessible at `localhost:5432`, and creates a named volume (`postgres_data`) to persist your database files.
+2. This creates:
+   * **PostgreSQL**: Accessible at `localhost:5432` (with database `receipt_parser_db` and volume `postgres_data`).
+   * **Redis**: Accessible at `localhost:6379` (with volume `redis_data` for queue persistence).
 
-### Option B: Run PostgreSQL Locally
-1. Start your local PostgreSQL service.
-2. Connect to it and create a database named `receipt_parser_db`:
-   ```sql
-   CREATE DATABASE receipt_parser_db;
-   ```
+*(If you are running services locally without Docker, ensure local Postgres and Redis services are active).*
 
 ---
 
@@ -54,8 +50,10 @@ We have added a `docker-compose.yml` file to the root of the project to manage d
 2. **Configure environment variables** in `.env`:
    * **DATABASE_URL**: Connect using:
      `postgres://postgres:postgres@localhost:5432/receipt_parser_db`
-   * **GEMINI_API_KEY**: Set your API key from Google AI Studio.
    * **PORT**: Set your preferred port (defaults to `3000`).
+   * **REDIS_HOST**: Set to `localhost` (or container IP).
+   * **REDIS_PORT**: Set to `6379`.
+   * **GEMINI_API_KEY**: Set your API key from Google AI Studio.
 
 ---
 

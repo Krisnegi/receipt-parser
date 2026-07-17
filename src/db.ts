@@ -42,6 +42,7 @@ export async function initializeDatabase(): Promise<void> {
       taxes NUMERIC(10, 2),
       items JSONB,
       raw_image BYTEA NOT NULL,
+      mime_type VARCHAR(100) NOT NULL,
       error_message TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );

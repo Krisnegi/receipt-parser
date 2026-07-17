@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { initializeDatabase, pool } from './db.js';
-import { parseReceipt } from './parser.js';
+import { addReceiptJob } from './queue.js';
 import { RegisterSchema, LoginSchema } from './schemas.js';
 
 // Extend Express Request interface to include userId from JWT token verification
@@ -173,14 +173,14 @@ app.post('/api/receipts', authMiddleware, upload.single('receipt'), async (req, 
 
     const { buffer, mimetype } = req.file;
 
-    // 2. Save the raw image bytes in the database immediately, setting status to 'processing' linked to userId
+    // 2. Save the raw image bytes and mime type in the database immediately, setting status to 'processing' linked to userId
     const insertQuery = `
-      INSERT INTO receipts (raw_image, status, user_id)
-      VALUES ($1, 'processing', $2)
+      INSERT INTO receipts (raw_image, status, user_id, mime_type)
+      VALUES ($1, 'processing', $2, $3)
       RETURNING id;
     `;
 
-    const dbResult = await pool.query(insertQuery, [buffer, req.userId]);
+    const dbResult = await pool.query(insertQuery, [buffer, req.userId, mimetype]);
     const receiptId = dbResult.rows[0].id;
 
     // 3. Immediately return 202 Accepted status response with the assigned ID
@@ -191,46 +191,8 @@ app.post('/api/receipts', authMiddleware, upload.single('receipt'), async (req, 
       message: 'Receipt uploaded successfully. Parsing and extraction are running in the background. Please query GET /api/receipts/:id to check status.',
     });
 
-    // 4. Trigger the heavy Gemini parsing and metadata extraction in the background (fire-and-forget)
-    (async () => {
-      try {
-        console.log(`[Queue] Starting background extraction for Receipt ID ${receiptId} (User ID: ${req.userId})...`);
-        const receiptData = await parseReceipt(buffer, mimetype);
-
-        const updateQuery = `
-          UPDATE receipts
-          SET store_name = $1, 
-              receipt_date = $2, 
-              total_amount = $3, 
-              taxes = $4, 
-              items = $5, 
-              status = 'completed',
-              category = $6
-          WHERE id = $7;
-        `;
-
-        await pool.query(updateQuery, [
-          receiptData.storeName,
-          receiptData.date,
-          receiptData.totalAmount,
-          receiptData.taxes,
-          JSON.stringify(receiptData.lineItems),
-          receiptData.category,
-          receiptId,
-        ]);
-        console.log(`[Queue] Receipt ID ${receiptId} processed and saved successfully.`);
-      } catch (error: any) {
-        console.error(`[Queue] Failed to process receipt ID ${receiptId}:`, error);
-
-        const failQuery = `
-          UPDATE receipts
-          SET status = 'failed', 
-              error_message = $1
-          WHERE id = $2;
-        `;
-        await pool.query(failQuery, [error.message || String(error), receiptId]);
-      }
-    })();
+    // 4. Dispatch the parsing job to the BullMQ Redis queue
+    await addReceiptJob({ receiptId });
 
   } catch (error) {
     next(error);
