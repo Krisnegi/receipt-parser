@@ -35,6 +35,7 @@ export async function initializeDatabase(): Promise<void> {
       id SERIAL PRIMARY KEY,
       user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
       status VARCHAR(50) DEFAULT 'processing',
+      category VARCHAR(50) DEFAULT 'Other',
       store_name VARCHAR(255),
       receipt_date DATE,
       total_amount NUMERIC(10, 2),

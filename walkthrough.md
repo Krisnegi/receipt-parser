@@ -249,3 +249,35 @@ If you request an ID that does not exist or belongs to another user (e.g. `/api/
   "error": "Receipt with ID 999 not found or you do not have permission to view it."
 }
 ```
+
+### Test 7: GET /api/receipts/summary (Category-based Expense Summary)
+Retrieve aggregated expenses by category. You can filter by date using the `?filter=` query parameter (`today`, `yesterday`, `this_week`, `this_month`, `this_year`). Defaults to `this_month`.
+```bash
+curl -i "http://localhost:3000/api/receipts/summary?filter=this_month" \
+  -H "Authorization: Bearer <TOKEN>"
+```
+**Expected Response (200 OK):**
+```json
+{
+  "success": true,
+  "filter": "this_month",
+  "expenses": {
+    "Medical & Pharmacy": 1132.00,
+    "Grocery": 0.00,
+    "Food & Dining": 0.00,
+    "Shopping": 42.50,
+    "Fuel": 0.00,
+    "Bills": 0.00,
+    "Other": 0.00
+  },
+  "totalExpenses": 1174.50
+}
+```
+If you pass an invalid filter parameter (e.g. `?filter=next_year`):
+**Expected Response (400 Bad Request):**
+```json
+{
+  "success": false,
+  "error": "filter: Invalid enum value. Expected 'today' | 'yesterday' | 'this_week' | 'this_month' | 'this_year', received 'next_year'"
+}
+```

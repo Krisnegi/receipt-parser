@@ -204,8 +204,9 @@ app.post('/api/receipts', authMiddleware, upload.single('receipt'), async (req, 
               total_amount = $3, 
               taxes = $4, 
               items = $5, 
-              status = 'completed'
-          WHERE id = $6;
+              status = 'completed',
+              category = $6
+          WHERE id = $7;
         `;
 
         await pool.query(updateQuery, [
@@ -214,6 +215,7 @@ app.post('/api/receipts', authMiddleware, upload.single('receipt'), async (req, 
           receiptData.totalAmount,
           receiptData.taxes,
           JSON.stringify(receiptData.lineItems),
+          receiptData.category,
           receiptId,
         ]);
         console.log(`[Queue] Receipt ID ${receiptId} processed and saved successfully.`);
@@ -253,6 +255,85 @@ app.get('/api/receipts', authMiddleware, async (req, res, next) => {
     res.status(200).json({
       success: true,
       receipts: dbResult.rows,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/receipts/summary
+ * Protected Endpoint. Retrieves aggregated expenses by category, filtered by date range.
+ * Supports: today, yesterday, this_week, this_month, this_year. Defaults to this_month.
+ */
+app.get('/api/receipts/summary', authMiddleware, async (req, res, next) => {
+  try {
+    // 1. Parse and validate the filter query parameter
+    const querySchema = z.object({
+      filter: z.enum(['today', 'yesterday', 'this_week', 'this_month', 'this_year']).default('this_month'),
+    });
+    
+    const { filter } = querySchema.parse(req.query);
+
+    // 2. Map date filter to SQL date clauses
+    let dateCondition = '';
+    switch (filter) {
+      case 'today':
+        dateCondition = 'receipt_date = CURRENT_DATE';
+        break;
+      case 'yesterday':
+        dateCondition = "receipt_date = CURRENT_DATE - INTERVAL '1 day'";
+        break;
+      case 'this_week':
+        dateCondition = "receipt_date >= DATE_TRUNC('week', CURRENT_DATE)";
+        break;
+      case 'this_month':
+        dateCondition = "receipt_date >= DATE_TRUNC('month', CURRENT_DATE)";
+        break;
+      case 'this_year':
+        dateCondition = "receipt_date >= DATE_TRUNC('year', CURRENT_DATE)";
+        break;
+    }
+
+    // 3. Query PostgreSQL to sum total amounts grouped by category
+    const summaryQuery = `
+      SELECT category, SUM(total_amount) as total
+      FROM receipts
+      WHERE user_id = $1 AND status = 'completed' AND ${dateCondition}
+      GROUP BY category;
+    `;
+
+    const dbResult = await pool.query(summaryQuery, [req.userId]);
+
+    // 4. Build output map ensuring all predefined categories exist in the response
+    const allowedCategories = [
+      'Medical & Pharmacy',
+      'Grocery',
+      'Food & Dining',
+      'Shopping',
+      'Fuel',
+      'Bills',
+      'Other',
+    ];
+
+    const expensesMap: Record<string, number> = {};
+    allowedCategories.forEach((cat) => {
+      expensesMap[cat] = 0.00;
+    });
+
+    let totalExpenses = 0.00;
+    dbResult.rows.forEach((row) => {
+      const cat = allowedCategories.includes(row.category) ? row.category : 'Other';
+      const amount = parseFloat(row.total || '0');
+      expensesMap[cat] = parseFloat((expensesMap[cat] + amount).toFixed(2));
+      totalExpenses += amount;
+    });
+
+    res.status(200).json({
+      success: true,
+      filter,
+      expenses: expensesMap,
+      totalExpenses: parseFloat(totalExpenses.toFixed(2)),
     });
   } catch (error) {
     next(error);

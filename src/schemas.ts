@@ -16,8 +16,20 @@ export const LineItemSchema = z.object({
   }),
 });
 
-// 2. Receipt Zod Schema for validation and TypeScript inference
+// 2. Predefined allowed categories for receipts
+export const ReceiptCategory = z.enum([
+  'Medical & Pharmacy',
+  'Grocery',
+  'Food & Dining',
+  'Shopping',
+  'Fuel',
+  'Bills',
+  'Other',
+]);
+
+// 3. Receipt Zod Schema for validation and TypeScript inference
 export const ReceiptSchema = z.object({
+  category: ReceiptCategory.default('Other'),
   storeName: z.string().nullable().default(null),
   date: z.string().nullable().default(null),
   totalAmount: z.number().nullable().default(null),
@@ -28,10 +40,23 @@ export const ReceiptSchema = z.object({
 export type LineItem = z.infer<typeof LineItemSchema>;
 export type Receipt = z.infer<typeof ReceiptSchema>;
 
-// 3. Gemini Response Schema using OpenAPI types from the official @google/genai SDK
+// 4. Gemini Response Schema using OpenAPI types from the official @google/genai SDK
 export const GeminiReceiptSchema = {
   type: Type.OBJECT,
   properties: {
+    category: {
+      type: Type.STRING,
+      description: 'The classified category of the receipt. Must be exactly one of the allowed categories: "Medical & Pharmacy", "Grocery", "Food & Dining", "Shopping", "Fuel", "Bills", "Other".',
+      enum: [
+        'Medical & Pharmacy',
+        'Grocery',
+        'Food & Dining',
+        'Shopping',
+        'Fuel',
+        'Bills',
+        'Other',
+      ],
+    },
     storeName: {
       type: Type.STRING,
       description: 'The name of the store. Return null if it cannot be determined.',

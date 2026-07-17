@@ -37,6 +37,7 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function parseReceipt(imageBuffer: Buffer, mimeType: string): Promise<Receipt> {
   const prompt = `
     Analyze the provided receipt image and extract details precisely matching the response schema:
+    - category: The classified category of the receipt. Choose exactly one of the allowed categories: "Medical & Pharmacy", "Grocery", "Food & Dining", "Shopping", "Fuel", "Bills", "Other".
     - storeName: Name of the store. Use null if not found.
     - date: Transaction date formatted as YYYY-MM-DD. Use null if not found.
     - totalAmount: The total transaction amount on the receipt as a number. Use null if not found.
@@ -44,10 +45,11 @@ export async function parseReceipt(imageBuffer: Buffer, mimeType: string): Promi
     - lineItems: An array of item objects, each with a description, quantity, and price.
 
     Instructions:
-    1. Only extract information that is explicitly stated or can be safely inferred from the receipt.
-    2. NEVER hallucinate any value. If a field cannot be determined, set it to null.
-    3. Return monetary amounts as numbers (not formatted strings like "$10.50").
-    4. Return quantity amounts as numbers (e.g., 2 instead of "2x").
+    1. Classify the receipt into one of the allowed categories based on the merchant name and items purchased.
+    2. Only extract information that is explicitly stated or can be safely inferred from the receipt.
+    3. NEVER hallucinate any value. If a field cannot be determined, set it to null.
+    4. Return monetary amounts as numbers (not formatted strings like "$10.50").
+    5. Return quantity amounts as numbers (e.g., 2 instead of "2x").
   `;
 
   let lastError: any = null;
