@@ -2,14 +2,56 @@ import express from 'express';
 import multer from 'multer';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import { z } from 'zod';
 import { initializeDatabase, pool } from './db.js';
 import { parseReceipt } from './parser.js';
+import { RegisterSchema, LoginSchema } from './schemas.js';
+
+// Extend Express Request interface to include userId from JWT token verification
+declare global {
+  namespace Express {
+    interface Request {
+      userId?: number;
+    }
+  }
+}
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('JWT_SECRET is not set in the environment variables.');
+  process.exit(1);
+}
+
+/**
+ * Authentication middleware that extracts the Bearer JWT token from the Authorization header.
+ * Verifies the token and attaches the authenticated userId to the request object.
+ */
+const authMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401);
+      throw new Error('Authentication token required. Use format: Bearer <token>');
+    }
+
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+    
+    req.userId = decoded.userId;
+    next();
+  } catch (error: any) {
+    res.status(401);
+    next(new Error(error.message || 'Authentication failed. Please login again.'));
+  }
+};
 
 // Standard middleware
 app.use(morgan('dev')); // Dev-friendly request logging
@@ -37,7 +79,91 @@ const upload = multer({
  * POST /api/receipts
  * Uploads a receipt image, parses it using Gemini 2.5 Flash, saves details and raw bytes in DB, and returns receipt.
  */
-app.post('/api/receipts', upload.single('receipt'), async (req, res, next) => {
+/**
+ * POST /api/auth/register
+ * Registers a new user account. Validates inputs, hashes password, and saves user.
+ */
+app.post('/api/auth/register', async (req, res, next) => {
+  try {
+    const validatedData = RegisterSchema.parse(req.body);
+    const { email, password } = validatedData;
+
+    // 1. Check if user already exists
+    const checkUserQuery = 'SELECT id FROM users WHERE email = $1;';
+    const checkResult = await pool.query(checkUserQuery, [email]);
+    if (checkResult.rows.length > 0) {
+      res.status(400);
+      throw new Error('Email address already registered.');
+    }
+
+    // 2. Hash password with bcryptjs
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // 3. Save to database
+    const insertUserQuery = `
+      INSERT INTO users (email, password_hash)
+      VALUES ($1, $2)
+      RETURNING id;
+    `;
+    const insertResult = await pool.query(insertUserQuery, [email, passwordHash]);
+    const userId = insertResult.rows[0].id;
+
+    res.status(201).json({
+      success: true,
+      userId,
+      message: 'User registered successfully. You can now login.',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/auth/login
+ * Logs in a user. Validates credentials, issues JWT token valid for 24h.
+ */
+app.post('/api/auth/login', async (req, res, next) => {
+  try {
+    const validatedData = LoginSchema.parse(req.body);
+    const { email, password } = validatedData;
+
+    // 1. Fetch user
+    const selectUserQuery = 'SELECT id, password_hash FROM users WHERE email = $1;';
+    const dbResult = await pool.query(selectUserQuery, [email]);
+    if (dbResult.rows.length === 0) {
+      res.status(401);
+      throw new Error('Invalid email or password.');
+    }
+
+    const user = dbResult.rows[0];
+
+    // 2. Compare passwords
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    if (!isPasswordValid) {
+      res.status(401);
+      throw new Error('Invalid email or password.');
+    }
+
+    // 3. Issue signed JWT
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '24h' });
+
+    res.status(200).json({
+      success: true,
+      token,
+      message: 'Login successful.',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/receipts
+ * Protected Endpoint. Uploads a receipt image and starts background parsing task.
+ * Links the receipt task to the authenticated user ID.
+ */
+app.post('/api/receipts', authMiddleware, upload.single('receipt'), async (req, res, next) => {
   try {
     // 1. Validate file existence
     if (!req.file) {
@@ -47,14 +173,14 @@ app.post('/api/receipts', upload.single('receipt'), async (req, res, next) => {
 
     const { buffer, mimetype } = req.file;
 
-    // 2. Save the raw image bytes in the database immediately, setting status to 'processing'
+    // 2. Save the raw image bytes in the database immediately, setting status to 'processing' linked to userId
     const insertQuery = `
-      INSERT INTO receipts (raw_image, status)
-      VALUES ($1, 'processing')
+      INSERT INTO receipts (raw_image, status, user_id)
+      VALUES ($1, 'processing', $2)
       RETURNING id;
     `;
 
-    const dbResult = await pool.query(insertQuery, [buffer]);
+    const dbResult = await pool.query(insertQuery, [buffer, req.userId]);
     const receiptId = dbResult.rows[0].id;
 
     // 3. Immediately return 202 Accepted status response with the assigned ID
@@ -68,7 +194,7 @@ app.post('/api/receipts', upload.single('receipt'), async (req, res, next) => {
     // 4. Trigger the heavy Gemini parsing and metadata extraction in the background (fire-and-forget)
     (async () => {
       try {
-        console.log(`[Queue] Starting background extraction for Receipt ID ${receiptId}...`);
+        console.log(`[Queue] Starting background extraction for Receipt ID ${receiptId} (User ID: ${req.userId})...`);
         const receiptData = await parseReceipt(buffer, mimetype);
 
         const updateQuery = `
@@ -111,18 +237,18 @@ app.post('/api/receipts', upload.single('receipt'), async (req, res, next) => {
 
 /**
  * GET /api/receipts
- * Retrieves a list of all parsed receipts from the database, newest first.
- * Omit raw_image from retrieval to prevent slow downloads of massive binary payloads.
+ * Protected Endpoint. Retrieves a list of all receipts belonging to the authenticated user.
  */
-app.get('/api/receipts', async (req, res, next) => {
+app.get('/api/receipts', authMiddleware, async (req, res, next) => {
   try {
     const selectQuery = `
       SELECT id, status, store_name, receipt_date, total_amount, taxes, items, error_message, created_at
       FROM receipts
+      WHERE user_id = $1
       ORDER BY created_at DESC;
     `;
 
-    const dbResult = await pool.query(selectQuery);
+    const dbResult = await pool.query(selectQuery, [req.userId]);
 
     res.status(200).json({
       success: true,
@@ -135,23 +261,23 @@ app.get('/api/receipts', async (req, res, next) => {
 
 /**
  * GET /api/receipts/:id
- * Retrieves detail of a single receipt by ID (excluding raw_image).
+ * Protected Endpoint. Retrieves detail of a single receipt by ID, ensuring it belongs to the authenticated user.
  */
-app.get('/api/receipts/:id', async (req, res, next) => {
+app.get('/api/receipts/:id', authMiddleware, async (req, res, next) => {
   try {
     const receiptId = req.params.id;
 
     const selectQuery = `
       SELECT id, status, store_name, receipt_date, total_amount, taxes, items, error_message, created_at
       FROM receipts
-      WHERE id = $1;
+      WHERE id = $1 AND user_id = $2;
     `;
 
-    const dbResult = await pool.query(selectQuery, [receiptId]);
+    const dbResult = await pool.query(selectQuery, [receiptId, req.userId]);
 
     if (dbResult.rows.length === 0) {
       res.status(404);
-      throw new Error(`Receipt with ID ${receiptId} not found.`);
+      throw new Error(`Receipt with ID ${receiptId} not found or you do not have permission to view it.`);
     }
 
     res.status(200).json({
@@ -172,8 +298,11 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
   let errorMessage = err.message || 'Internal Server Error';
 
-  // Handle specific Multer limits errors
-  if (err instanceof multer.MulterError) {
+  // Handle specific validation/parsing errors
+  if (err instanceof z.ZodError) {
+    statusCode = 400;
+    errorMessage = err.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+  } else if (err instanceof multer.MulterError) {
     statusCode = 400;
     if (err.code === 'LIMIT_FILE_SIZE') {
       errorMessage = 'File size limit exceeded. Maximum upload size is 10 MB.';

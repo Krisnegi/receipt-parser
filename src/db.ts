@@ -24,8 +24,16 @@ export const pool = new Pool({
  */
 export async function initializeDatabase(): Promise<void> {
   const query = `
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS receipts (
       id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
       status VARCHAR(50) DEFAULT 'processing',
       store_name VARCHAR(255),
       receipt_date DATE,
@@ -40,7 +48,7 @@ export async function initializeDatabase(): Promise<void> {
 
   try {
     await pool.query(query);
-    console.log('Database initialized successfully: "receipts" table is ready.');
+    console.log('Database initialized successfully: "users" and "receipts" tables are ready.');
   } catch (error) {
     console.error('Failed to initialize database:', error);
     throw error;

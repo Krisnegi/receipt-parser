@@ -101,12 +101,48 @@ npm start
 
 ## 6. Testing the API Using `curl`
 
-Here are the curl requests to test our endpoints:
+To access any receipt endpoints, you must first register a user account, log in, and acquire a JSON Web Token (JWT). You will then include this token in the header of all subsequent requests: `-H "Authorization: Bearer <your_token>"`.
 
-### Test 1: POST /api/receipts (Validation - Non-Image File)
-Test that upload validation rejects non-image files. Replace `package.json` with any non-image file path:
+### Test 1: POST /api/auth/register (User Registration)
+Register a new user:
+```bash
+curl -i -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com", "password":"password123"}'
+```
+**Expected Response (201 Created):**
+```json
+{
+  "success": true,
+  "userId": 1,
+  "message": "User registered successfully. You can now login."
+}
+```
+
+### Test 2: POST /api/auth/login (User Login)
+Log in with the registered credentials to obtain your JWT token:
+```bash
+curl -i -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com", "password":"password123"}'
+```
+**Expected Response (200 OK):**
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOi...",
+  "message": "Login successful."
+}
+```
+*(Copy the returned `"token"` value. We will refer to this as `<TOKEN>` in the tests below.)*
+
+---
+
+### Test 3: POST /api/receipts (Validation - Non-Image File)
+Test that validation rejects non-image files even when authenticated. Replace `<TOKEN>` with your login token:
 ```bash
 curl -i -X POST http://localhost:3000/api/receipts \
+  -H "Authorization: Bearer <TOKEN>" \
   -F "receipt=@package.json"
 ```
 **Expected Response (400 Bad Request):**
@@ -117,10 +153,11 @@ curl -i -X POST http://localhost:3000/api/receipts \
 }
 ```
 
-### Test 2: POST /api/receipts (Start Asynchronous Parsing)
-Upload a valid receipt image (e.g. `receipt.jpg`) to register a parsing task. The server will immediately save the raw image and return a response without holding the connection:
+### Test 4: POST /api/receipts (Start Asynchronous Parsing)
+Upload a valid receipt image (e.g. `receipt.jpg`) to register a parsing task. The task is tied to your authenticated user:
 ```bash
 curl -i -X POST http://localhost:3000/api/receipts \
+  -H "Authorization: Bearer <TOKEN>" \
   -F "receipt=@/path/to/your/receipt.jpg"
 ```
 **Expected Response (202 Accepted):**
@@ -133,10 +170,11 @@ curl -i -X POST http://localhost:3000/api/receipts \
 }
 ```
 
-### Test 3: GET /api/receipts (List Receipts)
-Get a list of all receipts and their current processing status (binary image data is omitted automatically to keep payloads small):
+### Test 5: GET /api/receipts (List Receipts)
+Get a list of all receipts belonging to your authenticated account:
 ```bash
-curl -i http://localhost:3000/api/receipts
+curl -i http://localhost:3000/api/receipts \
+  -H "Authorization: Bearer <TOKEN>"
 ```
 **Expected Response (200 OK):**
 ```json
@@ -169,27 +207,11 @@ curl -i http://localhost:3000/api/receipts
 }
 ```
 
-### Test 4: GET /api/receipts/:id (Retrieve Single Receipt Status/Detail)
+### Test 6: GET /api/receipts/:id (Retrieve Single Receipt Status/Detail)
 Get details and parsing status of a single receipt using its database ID. While it is processing, `status` will show `"processing"`. Once finished, it will display `"completed"` with parsed data, or `"failed"` with the error description under `error_message`.
 ```bash
-curl -i http://localhost:3000/api/receipts/1
-```
-**Expected Response (200 OK - Processing):**
-```json
-{
-  "success": true,
-  "receipt": {
-    "id": 1,
-    "status": "processing",
-    "store_name": null,
-    "receipt_date": null,
-    "total_amount": null,
-    "taxes": null,
-    "items": null,
-    "error_message": null,
-    "created_at": "2026-07-16T11:15:23.000Z"
-  }
-}
+curl -i http://localhost:3000/api/receipts/1 \
+  -H "Authorization: Bearer <TOKEN>"
 ```
 **Expected Response (200 OK - Completed):**
 ```json
@@ -219,11 +241,11 @@ curl -i http://localhost:3000/api/receipts/1
   }
 }
 ```
-If you request an ID that does not exist (e.g. `/api/receipts/999`):
+If you request an ID that does not exist or belongs to another user (e.g. `/api/receipts/999`):
 **Expected Response (404 Not Found):**
 ```json
 {
   "success": false,
-  "error": "Receipt with ID 999 not found."
+  "error": "Receipt with ID 999 not found or you do not have permission to view it."
 }
 ```

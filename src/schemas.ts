@@ -77,3 +77,27 @@ export const GeminiReceiptSchema = {
   },
   required: ['lineItems'],
 };
+
+// 4. User registration validation schema
+export const RegisterSchema = z.object({
+  email: z.string({
+    required_error: 'Email is required',
+  }).email('Invalid email address').trim().toLowerCase(),
+  password: z.string({
+    required_error: 'Password is required',
+  }).min(6, 'Password must be at least 6 characters long'),
+});
+
+// 5. User login validation schema
+export const LoginSchema = z.object({
+  email: z.string({
+    required_error: 'Email is required',
+  }).email('Invalid email address').trim().toLowerCase(),
+  password: z.string({
+    required_error: 'Password is required',
+  }),
+});
+
+export type RegisterInput = z.infer<typeof RegisterSchema>;
+export type LoginInput = z.infer<typeof LoginSchema>;
+
