@@ -24,11 +24,7 @@ export const receiptQueue = new Queue('receipt-parsing', { connection });
  */
 export async function addReceiptJob(data: { receiptId: number }): Promise<void> {
   await receiptQueue.add('parse-receipt-job', data, {
-    attempts: 3, // Enable automatic retry on queue job failures
-    backoff: {
-      type: 'exponential',
-      delay: 5000, // Wait 5s, then 10s, etc. before re-running a failed job
-    },
+    attempts: 1, // Disable BullMQ queue retries since the parser code already retries internally
   });
   console.log(`[Queue] Added parsing job for Receipt ID ${data.receiptId} to Redis queue.`);
 }
