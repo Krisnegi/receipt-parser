@@ -3,6 +3,9 @@ node_modules/
 
 # Production build output
 dist/
+.next/
+out/
+build/
 
 # Local environment configuration (contains sensitive API keys and DB URLs)
 .env
