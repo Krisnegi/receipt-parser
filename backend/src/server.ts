@@ -54,6 +54,17 @@ const authMiddleware = (req: express.Request, res: express.Response, next: expre
 };
 
 // Standard middleware
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
+
 app.use(morgan('dev')); // Dev-friendly request logging
 app.use(express.json()); // Parses application/json
 app.use(express.urlencoded({ extended: true })); // Parses form submissions
