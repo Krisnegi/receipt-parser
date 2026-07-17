@@ -20,9 +20,15 @@ const ai = new GoogleGenAI({
   },
 });
 
+// A list of fallback models in priority order
+const FALLBACK_MODELS = ['gemini-3.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+const MAX_RETRIES = 2; // 3 attempts per model
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
- * Sends a receipt image buffer to Google Gemini 2.5 Flash and extracts the receipt data.
- * Enforces structured JSON output matching the Zod schema configuration.
+ * Sends a receipt image buffer to Google Gemini and extracts the receipt data.
+ * Utilizes a retry strategy with exponential backoff and cascades to fallback models if needed.
  *
  * @param imageBuffer The raw binary image buffer of the receipt
  * @param mimeType The image MIME type (e.g., image/jpeg, image/png)
@@ -33,7 +39,7 @@ export async function parseReceipt(imageBuffer: Buffer, mimeType: string): Promi
     Analyze the provided receipt image and extract details precisely matching the response schema:
     - storeName: Name of the store. Use null if not found.
     - date: Transaction date formatted as YYYY-MM-DD. Use null if not found.
-    - totalAmount: The total transaction amount as a number. Use null if not found.
+    - totalAmount: The total transaction amount on the receipt as a number. Use null if not found.
     - taxes: The tax amount as a number. Use null if not found.
     - lineItems: An array of item objects, each with a description, quantity, and price.
 
@@ -44,37 +50,57 @@ export async function parseReceipt(imageBuffer: Buffer, mimeType: string): Promi
     4. Return quantity amounts as numbers (e.g., 2 instead of "2x").
   `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
-      contents: [
-        {
-          inlineData: {
-            data: imageBuffer.toString('base64'),
-            mimeType: mimeType,
+  let lastError: any = null;
+
+  for (const modelName of FALLBACK_MODELS) {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`[Parser] Attempting extraction with model: ${modelName} (Attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+        
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              inlineData: {
+                data: imageBuffer.toString('base64'),
+                mimeType: mimeType,
+              },
+            },
+            prompt,
+          ],
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: GeminiReceiptSchema,
           },
-        },
-        prompt,
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: GeminiReceiptSchema,
-      },
-    });
+        });
 
-    const text = response.text;
-    if (!text) {
-      throw new Error('Gemini API returned an empty text response.');
+        const text = response.text;
+        if (!text) {
+          throw new Error('Gemini API returned an empty text response.');
+        }
+
+        // Parse and validate using Zod
+        const parsedData = JSON.parse(text);
+        const validatedReceipt = ReceiptSchema.parse(parsedData);
+        
+        console.log(`[Parser] Successfully parsed receipt using model: ${modelName}`);
+        return validatedReceipt;
+      } catch (error: any) {
+        lastError = error;
+        console.warn(`[Parser] Attempt ${attempt + 1} failed for model ${modelName}. Error: ${error.message || error}`);
+
+        // If this is not the last attempt, sleep with exponential backoff before retrying
+        if (attempt < MAX_RETRIES) {
+          const backoffDelay = Math.pow(2, attempt) * 1000;
+          console.log(`[Parser] Waiting ${backoffDelay}ms before retrying ${modelName}...`);
+          await delay(backoffDelay);
+        }
+      }
     }
-
-    // Parse the JSON output from the model
-    const parsedData = JSON.parse(text);
-
-    // Validate the response using Zod to ensure type-safety and check constraints
-    const validatedReceipt = ReceiptSchema.parse(parsedData);
-    return validatedReceipt;
-  } catch (error: any) {
-    console.error('Gemini receipt extraction failed:', error);
-    throw new Error(`Failed to parse receipt: ${error.message || error}`);
+    console.warn(`[Parser] Model ${modelName} exhausted. Falling back to the next model...`);
   }
+
+  // If we reach here, all models and retries failed
+  console.error('[Parser] All fallback models and retry attempts failed.');
+  throw new Error(`Failed to parse receipt after multiple attempts. Last error: ${lastError?.message || lastError}`);
 }
