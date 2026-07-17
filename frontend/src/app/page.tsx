@@ -514,12 +514,30 @@ export default function Home() {
                             </span>
                           )}
                           {rec.status === "failed" && (
-                            <span
-                              title={rec.error_message || "Unknown error"}
-                              className="inline-flex items-center text-red-500 font-semibold text-xs bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg cursor-help"
-                            >
-                              Failed
-                            </span>
+                            <div className="inline-flex items-center justify-center gap-1.5">
+                              <span className="inline-flex items-center text-red-500 font-semibold text-xs bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg">
+                                Failed
+                              </span>
+                              <button
+                                onClick={() => alert(rec.error_message || "Unknown error")}
+                                className="inline-flex items-center text-red-400 hover:text-red-300 transition cursor-pointer"
+                                title="Click to view error details"
+                              >
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                  strokeWidth={2}
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
                           )}
                         </td>
                         <td className="py-4 text-right">
