@@ -6,13 +6,14 @@ import { parseReceipt } from './parser.js';
 // Load environment variables
 dotenv.config();
 
-const redisHost = process.env.REDIS_HOST || '127.0.0.1';
-const redisPort = parseInt(process.env.REDIS_PORT || '6379', 10);
+const redisUrl = process.env.REDIS_URL;
 
-const connection = {
-  host: redisHost,
-  port: redisPort,
-};
+const connection = redisUrl
+  ? { url: redisUrl }
+  : {
+      host: process.env.REDIS_HOST || '127.0.0.1',
+      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    };
 
 // 1. Initialize BullMQ Queue
 export const receiptQueue = new Queue('receipt-parsing', { connection });
