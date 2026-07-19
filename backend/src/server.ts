@@ -217,7 +217,7 @@ app.post('/api/receipts', authMiddleware, upload.single('receipt'), async (req, 
 app.get('/api/receipts', authMiddleware, async (req, res, next) => {
   try {
     const selectQuery = `
-      SELECT id, status, store_name, receipt_date, total_amount, taxes, items, error_message, created_at
+      SELECT id, status, store_name, receipt_date, total_amount, taxes, category, items, error_message, created_at
       FROM receipts
       WHERE user_id = $1
       ORDER BY created_at DESC;
@@ -322,7 +322,7 @@ app.get('/api/receipts/:id', authMiddleware, async (req, res, next) => {
     const receiptId = req.params.id;
 
     const selectQuery = `
-      SELECT id, status, store_name, receipt_date, total_amount, taxes, items, error_message, created_at
+      SELECT id, status, store_name, receipt_date, total_amount, taxes, category, items, error_message, created_at
       FROM receipts
       WHERE id = $1 AND user_id = $2;
     `;

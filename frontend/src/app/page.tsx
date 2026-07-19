@@ -409,7 +409,7 @@ export default function Home() {
                     Total Spent ({FILTER_LABELS[selectedFilter]})
                   </div>
                   <div className="text-3xl font-extrabold text-white">
-                    ${summary.totalExpenses.toFixed(2)}
+                    ₹{summary.totalExpenses.toFixed(2)}
                   </div>
                 </div>
 
@@ -422,7 +422,7 @@ export default function Home() {
                       <div key={cat} className="space-y-1.5">
                         <div className="flex justify-between text-xs font-semibold">
                           <span className="text-slate-400">{cat}</span>
-                          <span className="text-slate-200">${amount.toFixed(2)}</span>
+                          <span className="text-slate-200">₹{amount.toFixed(2)}</span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
                           <div
@@ -496,7 +496,7 @@ export default function Home() {
                           )}
                         </td>
                         <td className="py-4 text-right font-bold text-slate-200">
-                          {rec.status === "completed" ? `$${parseFloat(rec.total_amount || "0").toFixed(2)}` : "-"}
+                          {rec.status === "completed" ? `₹${parseFloat(rec.total_amount || "0").toFixed(2)}` : "-"}
                         </td>
                         <td className="py-4 text-center">
                           {rec.status === "processing" && (
@@ -607,7 +607,7 @@ export default function Home() {
                         <div className="text-slate-500 text-xs">Qty: {item.quantity}</div>
                       </div>
                       <div className="font-bold text-slate-300">
-                        ${parseFloat((item.price * item.quantity).toString()).toFixed(2)}
+                        ₹{parseFloat((item.price * item.quantity).toString()).toFixed(2)}
                       </div>
                     </div>
                   ))
@@ -621,11 +621,11 @@ export default function Home() {
             <div className="border-t border-slate-800 pt-4 space-y-2 text-sm font-semibold">
               <div className="flex justify-between text-slate-400">
                 <span>Taxes</span>
-                <span>${parseFloat(selectedReceipt.taxes || "0").toFixed(2)}</span>
+                <span>₹{parseFloat(selectedReceipt.taxes || "0").toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-base font-extrabold text-white">
                 <span>Total Amount</span>
-                <span>${parseFloat(selectedReceipt.total_amount || "0").toFixed(2)}</span>
+                <span>₹{parseFloat(selectedReceipt.total_amount || "0").toFixed(2)}</span>
               </div>
             </div>
 
